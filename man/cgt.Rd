@@ -6,10 +6,15 @@
 \usage{
 cgt(
   core_threshold = 0.95,
+  rare_threshold = 0.1,
   completeness,
   observations,
   quantiles = c(0.05, 0.25, 0.5),
-  n.cores = 1
+  plot = TRUE,
+  betap1 = 1,
+  betap2 = 1,
+  n_posterior_samples = 10000,
+  model_object
 )
 }
 \arguments{
