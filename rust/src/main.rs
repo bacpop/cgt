@@ -1,50 +1,43 @@
 use statrs::distribution::{Beta,ContinuousCDF};
 use statrs::statistics::*;
-use statrs::prec;
-use clap::{Parser};
+use clap::Parser;
 use std::io::{BufReader, BufRead};
 use std::fs::File;
 use rand::prelude::{*, Distribution};
 use rand::distributions::Uniform;
+use indicatif::ProgressIterator;
 use std::time::Instant;
 
 fn main() {
     let start = Instant::now();
-    
+
     let args = Args::parse();
     let breaks = parse_breaks(&args.breaks);
-    // println!("{:?}", breaks);
 
     let completeness: Vec<f64> = load_completeness(&args.completeness, args.completeness_column);
     let n_genomes = completeness.len();
-    // println!("{:?}", completeness);
 
     let counts: Vec<usize> = load_counts(&args.matrix);
     let n_genes = counts.len();
-    // println!("{:?}", counts);
 
-    let prior_sample_core = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.1, true);
-    let prior_sample_notcore = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.1, false);
-
-    let prior_sample_rare = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.0, false);
-    let prior_sample_notrare = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.0, true);
-
-
-    // // println!("{:?}", prior_sample_core);
     let mut rng = thread_rng();
-    let unif_all = Uniform::new(0.0, 1.0);
-    
-    let mut obs_sample_core = Vec::new();
-    let mut obs_sample_notcore = Vec::new();
-    let mut obs_sample_rare = Vec::new();
-    let mut obs_sample_notrare = Vec::new();
+    let prior_sample_core = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.1, true, &mut rng);
+    let prior_sample_notcore = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.1, false, &mut rng);
+    let prior_sample_rare = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.0, false, &mut rng);
+    let prior_sample_notrare = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.0, true, &mut rng);
 
-    for i in 0..args.n_samples {
-        obs_sample_core.push(poibin_sample(prior_sample_core[i], &completeness, n_genomes));
-        obs_sample_notcore.push(poibin_sample(prior_sample_notcore[i], &completeness, n_genomes));
-        obs_sample_rare.push(poibin_sample(prior_sample_rare[i], &completeness, n_genomes));
-        obs_sample_notrare.push(poibin_sample(prior_sample_notrare[i], &completeness, n_genomes));
-        
+
+    let mut obs_sample_core = Vec::with_capacity(args.n_samples);
+    let mut obs_sample_notcore = Vec::with_capacity(args.n_samples);
+    let mut obs_sample_rare = Vec::with_capacity(args.n_samples);
+    let mut obs_sample_notrare = Vec::with_capacity(args.n_samples);;
+
+    for i in (0..args.n_samples).progress() {
+        obs_sample_core.push(poibin_sample(prior_sample_core[i], &completeness, n_genomes, &mut rng));
+        obs_sample_notcore.push(poibin_sample(prior_sample_notcore[i], &completeness, n_genomes, &mut rng));
+        obs_sample_rare.push(poibin_sample(prior_sample_rare[i], &completeness, n_genomes, &mut rng));
+        obs_sample_notrare.push(poibin_sample(prior_sample_notrare[i], &completeness, n_genomes, &mut rng));
+
     }
 
     // println!("{:?}", prior_sample_core);
@@ -73,47 +66,40 @@ fn main() {
     // println!("{:?}", prob_rare_as_notrare);
     // println!("{:?}", prob_notrare_as_rare);
 
-    let mut thresholds: Vec<usize> = Vec::new();
-    let quant = vec![0.05, 0.1, 0.25];
-    for q in quant {
-        thresholds.push(prob_core_as_notcore.iter().position(|x| x > &q).unwrap());
-        println!("Probability of assigning rare as not rare <= {}% at >= {:?} gene observations, corresponding probability of assigning not rare as rare: {:?}%",
-         q * 100.0, &thresholds.last().unwrap(), prob_notcore_as_core.get(*thresholds.last().unwrap()).unwrap());
-    }
-    
+    let rare_threshold = prob_notrare_as_rare.iter().position(|x| x > &args.error).unwrap();
+    let core_threshold = prob_core_as_notcore.iter().position(|x| x > &args.error).unwrap();
+    println!("Core threshold\t{core_threshold}\t{:.3}", (core_threshold as f64) / (n_genomes as f64));
+    println!("Rare threshold\t{rare_threshold}\t{:.3}", (rare_threshold as f64) / (n_genomes as f64));
+
     let end = Instant::now();
 
     eprintln!("Done in {}s", end.duration_since(start).as_secs());
-    eprintln!("Done in {}ms", end.duration_since(start).as_millis());
-    eprintln!("Done in {}ns", end.duration_since(start).as_nanos());
 
 
 }
 
-fn poibin_sample(p: f64, completeness: &Vec<f64>, n: usize) -> usize {
+fn poibin_sample(p: f64, completeness: &Vec<f64>, n: usize, rng: &mut ThreadRng) -> usize {
     let c: Vec<f64> = completeness.iter().map(|x| x * p).collect();
-    let mut rng = thread_rng();
     let unif_all = Uniform::new(0.0, 1.0);
-    let u = unif_all.sample_iter(&mut rng).take(n);
+    let u = unif_all.sample_iter(rng).take(n);
     c.iter().zip(u).filter(|(c, u)| u <= *c).count()
 }
 
-fn prior_sample(betap1: f64, betap2: f64, n: usize, brk: f64, lower: bool) -> Vec<f64> {
+fn prior_sample(betap1: f64, betap2: f64, n: usize, brk: f64, lower: bool, rng: &mut ThreadRng) -> Vec<f64> {
     let b = Beta::new(betap1, betap2).unwrap();
     let cdf_val = b.cdf(brk);
 
     let uniform_samples = match lower {
-        true => {uniform_sample(cdf_val, 1.0, n)},
-        false => {uniform_sample(0.0, cdf_val, n)}
+        true => {uniform_sample(cdf_val, 1.0, n, rng)},
+        false => {uniform_sample(0.0, cdf_val, n, rng)}
     };
 
     uniform_samples.iter().map(|x| b.inverse_cdf(*x)).collect()
 }
 
-fn uniform_sample(lb: f64, ub: f64, n: usize) -> Vec<f64> {
+fn uniform_sample(lb: f64, ub: f64, n: usize, rng: &mut ThreadRng) -> Vec<f64> {
     let unif = Uniform::new(lb, ub);
     let mut out: Vec<f64> = Vec::new();
-    let mut rng = thread_rng();
 
     for _ in 0..n {
         out.push(rng.sample(unif));
@@ -133,8 +119,7 @@ fn uniform_sample(lb: f64, ub: f64, n: usize) -> Vec<f64> {
 
 // }
 
-fn sample_bernoulli(p: f64) -> usize {
-    let mut rng = thread_rng();
+fn sample_bernoulli(p: f64, rng: &mut ThreadRng) -> usize {
     if rng.sample(Uniform::new(0.0, 1.0)) <= p {
         1
     } else {
@@ -156,7 +141,7 @@ fn load_completeness(filename: &str, col_index: usize) -> Vec<f64> {
 fn load_counts(filename: &str) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
     let file = BufReader::new(File::open(filename).expect("File not found"));
-    
+
     for line in file.lines().skip(1) {
         if let Ok(x) = line {
             let count: usize = x.split_whitespace().skip(1).collect::<Vec<&str>>()
@@ -175,20 +160,25 @@ fn parse_breaks(string_breaks: &str) -> (f64, f64) {
     (mi, ma)
 }
 
+static DEFAULT_BREAKS: &str = "0.05,0.95";
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Args {
     pub completeness: String,
-    pub completeness_column: usize,
     pub matrix: String,
+    #[arg(long, default_value_t = 1)]
+    pub completeness_column: usize,
+    #[arg(long, default_value_t = DEFAULT_BREAKS.to_string())]
     pub breaks: String,
+    #[arg(long, default_value_t = 0.05)]
     pub error: f64,
-    #[arg(default_value_t = 100)]
+    #[arg(long, default_value_t = 10000)]
     pub n_samples: usize,
-    #[arg(default_value_t = 0.1)]
+    #[arg(long, default_value_t = 0.1)]
     pub beta_param1: f64,
-    #[arg(default_value_t = 0.1)]
+    #[arg(long, default_value_t = 0.1)]
     pub beta_param2: f64,
 }
 
