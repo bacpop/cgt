@@ -1,15 +1,15 @@
 use statrs::distribution::{Beta,ContinuousCDF};
 use statrs::statistics::*;
 use clap::Parser;
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, BufWriter, Write};
 use std::fs::File;
+use std::path::Path;
 use rand::prelude::{*, Distribution};
 use rand::distributions::Uniform;
 use indicatif::ProgressIterator;
-use std::time::Instant;
+use std::collections::HashMap;
 
 fn main() {
-    let start = Instant::now();
 
     let args = Args::parse();
     let breaks = parse_breaks(&args.breaks);
@@ -17,8 +17,8 @@ fn main() {
     let completeness: Vec<f64> = load_completeness(&args.completeness, args.completeness_column);
     let n_genomes = completeness.len();
 
-    let counts: Vec<usize> = load_counts(&args.matrix);
-    let n_genes = counts.len();
+    let countvec = load_counts(&args.matrix);
+    let counts: HashMap<String, usize> = countvec.into_iter().collect();
 
     let mut rng = thread_rng();
     let prior_sample_core = prior_sample(args.beta_param1, args.beta_param2, args.n_samples, breaks.1, true, &mut rng);
@@ -40,12 +40,6 @@ fn main() {
 
     }
 
-    // println!("{:?}", prior_sample_core);
-    // println!("{:?}", obs_sample_core);
-
-    // println!("{:?}", prior_sample_notcore);
-    // println!("{:?}", obs_sample_notcore);
-
     let ns = args.n_samples as f64;
 
     let mut prob_core_as_notcore: Vec<f64> = Vec::new();
@@ -60,22 +54,35 @@ fn main() {
         prob_notrare_as_rare.push((obs_sample_notrare.iter().filter(|x| *x <= &i).count() as f64) / ns);
     }
 
-    // println!("{:?}", prob_core_as_notcore);
-    println!("{:?}", prob_notcore_as_core);
-
-    // println!("{:?}", prob_rare_as_notrare);
-    // println!("{:?}", prob_notrare_as_rare);
-
     let rare_threshold = prob_notrare_as_rare.iter().position(|x| x > &args.error).unwrap();
     let core_threshold = prob_core_as_notcore.iter().position(|x| x > &args.error).unwrap();
-    println!("Core threshold\t{core_threshold}\t{:.3}", (core_threshold as f64) / (n_genomes as f64));
-    println!("Rare threshold\t{rare_threshold}\t{:.3}", (rare_threshold as f64) / (n_genomes as f64));
+    
+    write_labels(&counts, &rare_threshold, &core_threshold);
 
-    let end = Instant::now();
+    println!("Core threshold: >= {core_threshold} observations or >= {:.2}% frequency", 100.0 * (core_threshold as f64) / (n_genomes as f64));
+    println!("Rare threshold: <= {rare_threshold} observations or <= {:.2}% frequency", 100.0 * (rare_threshold as f64) / (n_genomes as f64));
 
-    eprintln!("Done in {}s", end.duration_since(start).as_secs());
 
+}
 
+fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize) -> () {
+    let f = File::create("gene_labels.tsv").unwrap();
+    let mut fs = BufWriter::new(f);
+    writeln!(fs, "gene\tcount\tlabel");
+
+    let mut label: String;
+    for (key, count) in counts.iter() {
+
+        if count >= core_threshold {
+            label = String::from("core");
+        } else if count <= rare_threshold {
+            label = String::from("rare")
+        } else {
+            label = String::from("middle")
+        }
+        
+        writeln!(fs, "{}\t{}\t{}", key, count, label);
+    }
 }
 
 fn poibin_sample(p: f64, completeness: &Vec<f64>, n: usize, rng: &mut ThreadRng) -> usize {
@@ -108,17 +115,6 @@ fn uniform_sample(lb: f64, ub: f64, n: usize, rng: &mut ThreadRng) -> Vec<f64> {
     out
 }
 
-// fn poibinom_sample(completeness: &Vec<f64>, prior_samples: &Vec<f64>) -> Vec<usize> {
-//     let mut out: Vec<usize> = Vec::new();
-
-//     for ps in prior_samples {
-//        out.push(completeness.iter().fold(0,|acc, el| acc + sample_bernoulli(el * ps)));
-//     }
-
-//     out
-
-// }
-
 fn sample_bernoulli(p: f64, rng: &mut ThreadRng) -> usize {
     if rng.sample(Uniform::new(0.0, 1.0)) <= p {
         1
@@ -138,16 +134,19 @@ fn load_completeness(filename: &str, col_index: usize) -> Vec<f64> {
     out
 }
 
-fn load_counts(filename: &str) -> Vec<usize> {
-    let mut out: Vec<usize> = Vec::new();
+fn load_counts<'a>(filename: &str) -> Vec<(String, usize)> {
+
+    let mut out: Vec<(String, usize)> = Vec::new();
     let file = BufReader::new(File::open(filename).expect("File not found"));
 
     for line in file.lines().skip(1) {
         if let Ok(x) = line {
-            let count: usize = x.split_whitespace().skip(1).collect::<Vec<&str>>()
+            let mut spl = x.split_whitespace();
+            let name: &str = spl.next().unwrap();
+            let count: usize = spl.collect::<Vec<&str>>()
             .iter().map(|el| el.parse::<usize>().unwrap()).collect::<Vec<usize>>().iter().sum();
 
-            out.push(count);
+            out.push((String::from(name), count));
         }
     }
     out
