@@ -1,5 +1,5 @@
 [package]
-name = "cgt_rust"
+name = "cgt"
 version = "0.1.0"
 
 authors = [
