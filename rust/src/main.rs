@@ -3,7 +3,6 @@ use statrs::statistics::*;
 use clap::Parser;
 use std::io::{BufReader, BufRead, BufWriter, Write};
 use std::fs::File;
-use std::path::Path;
 use rand::prelude::{*, Distribution};
 use rand::distributions::Uniform;
 use indicatif::ProgressIterator;
@@ -30,7 +29,7 @@ fn main() {
     let mut obs_sample_core = Vec::with_capacity(args.n_samples);
     let mut obs_sample_notcore = Vec::with_capacity(args.n_samples);
     let mut obs_sample_rare = Vec::with_capacity(args.n_samples);
-    let mut obs_sample_notrare = Vec::with_capacity(args.n_samples);;
+    let mut obs_sample_notrare = Vec::with_capacity(args.n_samples);
 
     for i in (0..args.n_samples).progress() {
         obs_sample_core.push(poibin_sample(prior_sample_core[i], &completeness, n_genomes, &mut rng));
@@ -57,7 +56,7 @@ fn main() {
     let rare_threshold = prob_notrare_as_rare.iter().position(|x| x > &args.error).unwrap();
     let core_threshold = prob_core_as_notcore.iter().position(|x| x > &args.error).unwrap();
     
-    write_labels(&counts, &rare_threshold, &core_threshold);
+    write_labels(&counts, &rare_threshold, &core_threshold, args.output_file);
 
     println!("Core threshold: >= {core_threshold} observations or >= {:.2}% frequency", 100.0 * (core_threshold as f64) / (n_genomes as f64));
     println!("Rare threshold: <= {rare_threshold} observations or <= {:.2}% frequency", 100.0 * (rare_threshold as f64) / (n_genomes as f64));
@@ -65,8 +64,8 @@ fn main() {
 
 }
 
-fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize) -> () {
-    let f = File::create("gene_labels.tsv").unwrap();
+fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize, output_path: String) -> () {
+    let f = File::create(output_path).unwrap();
     let mut fs = BufWriter::new(f);
     writeln!(fs, "gene\tcount\tlabel");
 
@@ -115,17 +114,9 @@ fn uniform_sample(lb: f64, ub: f64, n: usize, rng: &mut ThreadRng) -> Vec<f64> {
     out
 }
 
-fn sample_bernoulli(p: f64, rng: &mut ThreadRng) -> usize {
-    if rng.sample(Uniform::new(0.0, 1.0)) <= p {
-        1
-    } else {
-        0
-    }
-}
-
 fn load_completeness(filename: &str, col_index: usize) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
-    let file = BufReader::new(File::open(filename).expect("File not found"));
+    let file = BufReader::new(File::open(filename).expect("Completeness file not found"));
     for line in file.lines().skip(1) {
         if let Ok(x) = line {
             out.push(x.split_whitespace().skip(col_index - 1).next().unwrap().parse::<f64>().unwrap() / 100.0);
@@ -137,7 +128,7 @@ fn load_completeness(filename: &str, col_index: usize) -> Vec<f64> {
 fn load_counts<'a>(filename: &str) -> Vec<(String, usize)> {
 
     let mut out: Vec<(String, usize)> = Vec::new();
-    let file = BufReader::new(File::open(filename).expect("File not found"));
+    let file = BufReader::new(File::open(filename).expect("Counts file not found"));
 
     for line in file.lines().skip(1) {
         if let Ok(x) = line {
@@ -167,6 +158,8 @@ static DEFAULT_BREAKS: &str = "0.05,0.95";
 pub struct Args {
     pub completeness: String,
     pub matrix: String,
+    #[arg(long, default_value_t = String::from("celebrimbor_output.tsv"))]
+    pub output_file: String,
     #[arg(long, default_value_t = 1)]
     pub completeness_column: usize,
     #[arg(long, default_value_t = DEFAULT_BREAKS.to_string())]
