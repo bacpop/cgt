@@ -1,5 +1,5 @@
 [package]
-name = "cgt"
+name = "cgt_bacpop"
 version = "0.1.0"
 
 authors = [
