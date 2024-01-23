@@ -11,5 +11,5 @@ The following people have contributed to writing the rust code and fitting it in
 ## Example
 You can run the code on on checkM output called `genome_metadata.tsv` and a presence-absence matrix (generated earlier in the CELEBRIMBOR snakemake pipeline) `gene_presence_absence.Rtab`. The `completeness-column 7` argument specifies the column in `genome_metadata.tsv` that contains the completeness score for each genome sample.
 
-`target/release/cgt_rust genome_metadata.tsv gene_presence_absence.Rtab --completeness-column 7`
+`target/release/cgt_rust example_data/genome_metadata.tsv example_data/gene_presence_absence.Rtab --completeness-column 7`
 
