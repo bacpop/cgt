@@ -65,7 +65,7 @@ fn main() {
 
 }
 
-fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize, output_path: String) -> () {
+fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize, output_path: String) {
     let f = File::create(output_path).unwrap();
     let mut fs = BufWriter::new(f);
     writeln!(fs, "gene\tcount\tlabel");
@@ -85,7 +85,7 @@ fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_th
     }
 }
 
-fn poibin_sample(p: f64, completeness: &Vec<f64>, n: usize, rng: &mut ThreadRng, unif_all: Uniform<f64>) -> usize {
+fn poibin_sample(p: f64, completeness: &[f64], n: usize, rng: &mut ThreadRng, unif_all: Uniform<f64>) -> usize {
     let c: Vec<f64> = completeness.iter().map(|x| x * p).collect();
     let u = unif_all.sample_iter(rng).take(n);
     c.iter().zip(u).filter(|(c, u)| u <= *c).count()
@@ -117,28 +117,24 @@ fn uniform_sample(lb: f64, ub: f64, n: usize, rng: &mut ThreadRng) -> Vec<f64> {
 fn load_completeness(filename: &str, col_index: usize) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
     let file = BufReader::new(File::open(filename).expect("Completeness file not found"));
-    for line in file.lines().skip(1) {
-        if let Ok(x) = line {
-            out.push(x.split_whitespace().skip(col_index - 1).next().unwrap().parse::<f64>().unwrap() / 100.0);
-        }
+    for line in file.lines().skip(1).flatten() {
+        out.push(line.split_whitespace().nth(col_index - 1).unwrap().parse::<f64>().unwrap() / 100.0);
     }
     out
 }
 
-fn load_counts<'a>(filename: &str) -> Vec<(String, usize)> {
+fn load_counts(filename: &str) -> Vec<(String, usize)> {
 
     let mut out: Vec<(String, usize)> = Vec::new();
     let file = BufReader::new(File::open(filename).expect("Counts file not found"));
 
-    for line in file.lines().skip(1) {
-        if let Ok(x) = line {
-            let mut spl = x.split_whitespace();
-            let name: &str = spl.next().unwrap();
-            let count: usize = spl.collect::<Vec<&str>>()
-            .iter().map(|el| el.parse::<usize>().unwrap()).collect::<Vec<usize>>().iter().sum();
+    for line in file.lines().skip(1).flatten() {
+        let mut spl = line.split_whitespace();
+        let name: &str = spl.next().unwrap();
+        let count: usize = spl.collect::<Vec<&str>>()
+        .iter().map(|el| el.parse::<usize>().unwrap()).collect::<Vec<usize>>().iter().sum();
 
-            out.push((String::from(name), count));
-        }
+        out.push((String::from(name), count));
     }
     out
 }
