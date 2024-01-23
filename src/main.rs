@@ -68,7 +68,7 @@ fn main() {
 fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_threshold: &usize, output_path: String) {
     let f = File::create(output_path).unwrap();
     let mut fs = BufWriter::new(f);
-    writeln!(fs, "gene\tcount\tlabel");
+    writeln!(fs, "gene\tcount\tlabel").unwrap();
 
     let mut label: String;
     for (key, count) in counts.iter() {
@@ -81,7 +81,7 @@ fn write_labels(counts: &HashMap<String, usize>, rare_threshold: &usize, core_th
             label = String::from("middle")
         }
         
-        writeln!(fs, "{}\t{}\t{}", key, count, label);
+        writeln!(fs, "{}\t{}\t{}", key, count, label).unwrap();
     }
 }
 
