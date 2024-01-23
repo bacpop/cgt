@@ -13,5 +13,5 @@ You can run the code on on checkM output called `genome_metadata.tsv` and a pres
 
 First build the crate using `cargo build --release` in this directory. Then you can run the program on the example data provided with the following command:
 
-`target/release/cgt example_data/genome_metadata.tsv example_data/gene_presence_absence.Rtab --completeness-column 7`
+`target/release/cgt_bacpop example_data/genome_metadata.tsv example_data/gene_presence_absence.Rtab --completeness-column 7`
 
