@@ -8,7 +8,7 @@ authors = [
     "Samuel Horsfield <shorsfield@ebi.ac.uk>",
     "Johanna von Wachsmann <wachsmannj@ebi.ac.uk>"
 ]
-edition = "2024"
+edition = "2021"
 description = "Label core and rare genes in pangenome dataa"
 repository = "https://github.com/bacpop/cgt"
 homepage = "https://bacpop.org/software/"
